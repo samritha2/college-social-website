@@ -14,13 +14,18 @@ const verifyToken = (req, res, next) => {
   }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).json({ message: "Invalid or expired token" })
-    }
+  if (err) {
+    return res.status(401).json({ message: "Invalid or expired token" })
+  }
 
-    req.user = decoded
-    next()
-  })
+  req.user = {
+    id: decoded.id,
+    role: decoded.role
+  }
+
+  next()
+})
+
 }
 
 module.exports = verifyToken

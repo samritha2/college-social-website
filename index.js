@@ -1,6 +1,7 @@
+require("dotenv").config()
+
 const express = require("express")
 const cors = require("cors")
-require("dotenv").config()
 
 const app = express()
 
@@ -9,23 +10,22 @@ app.use(express.json())
 
 const db = require("./config/db")
 
+// Routes
 const authRoutes = require("./routes/auth")
-app.use("/api/auth", authRoutes)
-
 const clubRoutes = require("./routes/clubs")
-app.use("/api/clubs", clubRoutes)
-
 const postRoutes = require("./routes/posts")
-app.use("/api/posts", postRoutes)
-
 const commentRoutes = require("./routes/comments")
-app.use("/api/comments", commentRoutes)
-
 const likeRoutes = require("./routes/likes")
-app.use("/api/likes", likeRoutes)
-
 const followerRoutes = require("./routes/followers")
+const aiRoutes = require("./routes/ai")
+
+app.use("/api/auth", authRoutes)
+app.use("/api/clubs", clubRoutes)
+app.use("/api/posts", postRoutes)
+app.use("/api/comments", commentRoutes)
+app.use("/api/likes", likeRoutes)
 app.use("/api/followers", followerRoutes)
+app.use("/api/ai", aiRoutes)
 
 const verifyToken = require("./middleware/authMiddleware")
 
@@ -43,5 +43,3 @@ app.get("/", (req, res) => {
 app.listen(5000, () => {
   console.log("Server running on port 5000")
 })
-
-

@@ -4,37 +4,61 @@ const verifyToken = require("../middleware/authMiddleware")
 
 const router = express.Router()
 
-// CREATE CLUB (Only club_admin)
 router.post("/create", verifyToken, (req, res) => {
   if (req.user.role !== "club_admin") {
     return res.status(403).json({ message: "Only club admins can create clubs" })
   }
 
-  const { club_name, description, logo } = req.body
+  let { club_name, description, logo } = req.body
+
+  if (!club_name || !description) {
+    return res.status(400).json({ message: "Club name and description required" })
+  }
+
+  club_name = club_name.trim().toLowerCase()
   const created_by = req.user.id
 
   db.query(
-    "INSERT INTO clubs (club_name, description, logo, created_by) VALUES (?, ?, ?, ?)",
-    [club_name, description, logo, created_by],
+    "SELECT * FROM clubs WHERE LOWER(club_name) = ?",
+    [club_name],
     (err, result) => {
-      if (err) return res.status(500).json(err)
+      if (result.length > 0) {
+        return res.status(400).json({ message: "Club already exists" })
+      }
 
-      res.json({
-        message: "Club created successfully 🎉",
-        clubId: result.insertId
-      })
+      db.query(
+        "INSERT INTO clubs (club_name, description, logo, created_by, created_at) VALUES (?, ?, ?, ?, NOW())",
+        [club_name, description, logo, created_by],
+        (err, result) => {
+          if (err) return res.status(500).json({ message: "Something went wrong" })
+          res.json({ message: "Club created successfully", clubId: result.insertId })
+        }
+      )
     }
   )
 })
 
-
-// GET ALL CLUBS
 router.get("/all", (req, res) => {
-  db.query("SELECT * FROM clubs", (err, result) => {
-    if (err) return res.status(500).json(err)
+  db.query(
+    "SELECT c.*, u.name AS owner_name FROM clubs c JOIN users u ON c.created_by = u.id",
+    (err, result) => {
+      if (err) return res.status(500).json({ message: "Something went wrong" })
+      res.json(result)
+    }
+  )
+})
 
-    res.json(result)
-  })
+router.get("/search/:name", (req, res) => {
+  const name = "%" + req.params.name + "%"
+
+  db.query(
+    "SELECT * FROM clubs WHERE club_name LIKE ?",
+    [name],
+    (err, result) => {
+      if (err) return res.status(500).json({ message: "Something went wrong" })
+      res.json(result)
+    }
+  )
 })
 
 module.exports = router

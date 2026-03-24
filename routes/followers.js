@@ -4,98 +4,185 @@ const verifyToken = require("../middleware/authMiddleware")
 
 const router = express.Router()
 
+
 // FOLLOW CLUB
 router.post("/follow", verifyToken, (req, res) => {
-
   const { club_id } = req.body
   const user_id = req.user.id
 
-  db.query(
-    "INSERT INTO followers (club_id, user_id) VALUES (?, ?)",
-    [club_id, user_id],
-    (err) => {
+  if (!club_id) {
+    return res.status(400).json({ message: "Club ID required" })
+  }
 
-      if (err) {
-        if (err.code === "ER_DUP_ENTRY") {
+  db.query("SELECT * FROM clubs WHERE id = ?", [club_id], (err, club) => {
+    if (err) return res.status(500).json({ message: "Error checking club" })
+
+    if (club.length === 0) {
+      return res.status(404).json({ message: "Club not found" })
+    }
+
+    const ownerId = club[0].created_by
+
+    // Prevent owner from following their own club
+    if (ownerId === user_id) {
+      return res.status(400).json({ message: "Owner cannot follow their own club" })
+    }
+
+    db.query(
+      "SELECT * FROM followers WHERE club_id = ? AND user_id = ?",
+      [club_id, user_id],
+      (err, existing) => {
+        if (existing.length > 0) {
           return res.status(400).json({ message: "Already following" })
         }
-        return res.status(500).json(err)
-      }
 
-      res.json({ message: "Club followed successfully 🔔" })
-    }
-  )
+        db.query(
+          "INSERT INTO followers (club_id, user_id) VALUES (?, ?)",
+          [club_id, user_id],
+          (err) => {
+            if (err) return res.status(500).json({ message: "Follow failed" })
+
+            // 🔔 Notification to club owner
+            db.query(
+              "INSERT INTO notifications (user_id, message) VALUES (?, ?)",
+              [ownerId, "Someone followed your club"]
+            )
+
+            res.json({ message: "Followed successfully" })
+          }
+        )
+      }
+    )
+  })
 })
 
 
 // UNFOLLOW CLUB
-router.post("/unfollow", verifyToken, (req, res) => {
-
-  const { club_id } = req.body
-  const user_id = req.user.id
+router.delete("/unfollow/:clubId", verifyToken, (req, res) => {
+  const clubId = req.params.clubId
+  const userId = req.user.id
 
   db.query(
     "DELETE FROM followers WHERE club_id = ? AND user_id = ?",
-    [club_id, user_id],
-    (err) => {
-      if (err) return res.status(500).json(err)
+    [clubId, userId],
+    (err, result) => {
+      if (err) return res.status(500).json({ message: "Error" })
 
-      res.json({ message: "Unfollowed club ❌" })
+      if (result.affectedRows === 0) {
+        return res.json({ message: "Not following this club" })
+      }
+
+      res.json({ message: "Unfollowed successfully" })
     }
   )
 })
 
 
-// CHECK IF USER FOLLOWS A CLUB
-router.get("/check/:clubId", verifyToken, (req, res) => {
+// REMOVE FOLLOWER (Only club owner)
+router.delete("/remove/:clubId/:userId", verifyToken, (req, res) => {
+  const { clubId, userId } = req.params
 
-  const user_id = req.user.id
-  const { clubId } = req.params
+  db.query("SELECT * FROM clubs WHERE id = ?", [clubId], (err, club) => {
+    if (club[0].created_by !== req.user.id) {
+      return res.status(403).json({ message: "Only owner can remove followers" })
+    }
+
+    db.query(
+      "DELETE FROM followers WHERE club_id = ? AND user_id = ?",
+      [clubId, userId],
+      () => res.json({ message: "Follower removed" })
+    )
+  })
+})
+
+
+// FOLLOW STATUS
+router.get("/status/:clubId", verifyToken, (req, res) => {
+  const clubId = req.params.clubId
+  const userId = req.user.id
 
   db.query(
-    "SELECT * FROM followers WHERE club_id = ? AND user_id = ?",
-    [clubId, user_id],
+    "SELECT id FROM followers WHERE club_id = ? AND user_id = ?",
+    [clubId, userId],
     (err, result) => {
+      if (err) return res.status(500).json({ message: "Error" })
 
-      if (err) return res.status(500).json(err)
-
-      res.json({ isFollowing: result.length > 0 })
+      res.json({
+        following: result.length > 0
+      })
     }
   )
 })
 
 
-// GET ALL FOLLOWED CLUBS BY USER
+// GET FOLLOWERS + COUNT (combined)
+router.get("/details/:clubId", (req, res) => {
+  const clubId = req.params.clubId
+
+  const query = `
+    SELECT users.id, users.name
+    FROM followers
+    JOIN users ON followers.user_id = users.id
+    WHERE followers.club_id = ?
+  `
+
+  db.query(query, [clubId], (err, users) => {
+    if (err) return res.status(500).json({ message: "Error" })
+
+    res.json({
+      total_followers: users.length,
+      followers: users
+    })
+  })
+})
+
+
+// GET CLUBS FOLLOWED BY USER
 router.get("/my", verifyToken, (req, res) => {
+  const userId = req.user.id
 
-  const user_id = req.user.id
+  const query = `
+    SELECT c.id, c.club_name
+    FROM followers f
+    JOIN clubs c ON f.club_id = c.id
+    WHERE f.user_id = ?
+  `
 
-  db.query(
-    "SELECT club_id FROM followers WHERE user_id = ?",
-    [user_id],
-    (err, result) => {
+  db.query(query, [userId], (err, result) => {
+    if (err) return res.status(500).json({ message: "Error" })
 
-      if (err) return res.status(500).json(err)
-
-      res.json(result)
-    }
-  )
+    res.json(result)
+  })
 })
 
 
-// GET FOLLOWER COUNT
-router.get("/:clubId", (req, res) => {
-
-  const { clubId } = req.params
+// MUTUAL FOLLOW CHECK (extra feature)
+router.get("/mutual/:clubId", verifyToken, (req, res) => {
+  const clubId = req.params.clubId
+  const userId = req.user.id
 
   db.query(
-    "SELECT COUNT(*) AS followerCount FROM followers WHERE club_id = ?",
+    "SELECT created_by FROM clubs WHERE id = ?",
     [clubId],
-    (err, result) => {
+    (err, club) => {
+      if (club.length === 0) {
+        return res.status(404).json({ message: "Club not found" })
+      }
 
-      if (err) return res.status(500).json(err)
+      const ownerId = club[0].created_by
 
-      res.json(result[0])
+      db.query(
+        "SELECT * FROM followers WHERE club_id = ? AND user_id = ?",
+        [clubId, userId],
+        (err, follow) => {
+          const isFollowing = follow.length > 0
+
+          res.json({
+            userFollowsClub: isFollowing,
+            clubOwner: ownerId
+          })
+        }
+      )
     }
   )
 })

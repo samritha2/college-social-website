@@ -4,19 +4,15 @@ const verifyToken = require("../middleware/authMiddleware")
 const router = express.Router()
 
 router.post("/chat", verifyToken, async (req, res) => {
-  try {
-    const { question } = req.body
+  const { question } = req.body
 
-    res.json({
-      answer: "AI feature temporarily paused. Will resume later."
-    })
-
-  } catch (err) {
-    res.status(500).json({
-      message: "AI error"
-    })
+  if (!question) {
+    return res.status(400).json({ message: "Question required" })
   }
+
+  res.json({
+    answer: `You asked: "${question}". AI will be enabled soon.`
+  })
 })
 
 module.exports = router
-

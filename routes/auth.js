@@ -2,36 +2,39 @@ const express = require("express")
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
 const db = require("../config/db")
+const verifyToken = require("../middleware/authMiddleware")
 
 const router = express.Router()
 
-// REGISTER
 router.post("/register", async (req, res) => {
   const { name, email, password, role } = req.body
 
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10)
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ message: "All fields are required" })
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10)
+
+  db.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
+    if (result.length > 0) {
+      return res.status(400).json({ message: "Email already exists" })
+    }
 
     db.query(
       "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
       [name, email, hashedPassword, role],
-      (err, result) => {
-        if (err) return res.status(500).json(err)
-        res.json({ message: "User Registered Successfully ✅" })
+      (err) => {
+        if (err) return res.status(500).json({ message: "Something went wrong" })
+        res.json({ message: "User Registered Successfully" })
       }
     )
-  } catch (error) {
-    res.status(500).json({ error: "Registration failed" })
-  }
+  })
 })
 
-// LOGIN
 router.post("/login", (req, res) => {
   const { email, password } = req.body
 
   db.query("SELECT * FROM users WHERE email = ?", [email], async (err, result) => {
-    if (err) return res.status(500).json(err)
-
     if (result.length === 0) {
       return res.status(404).json({ message: "User not found" })
     }
@@ -48,8 +51,21 @@ router.post("/login", (req, res) => {
       { expiresIn: "1d" }
     )
 
-    res.json({ message: "Login successful ✅", token })
+    res.json({ message: "Login successful", token })
   })
+})
+
+router.put("/update", verifyToken, (req, res) => {
+  const { name } = req.body
+
+  db.query(
+    "UPDATE users SET name = ? WHERE id = ?",
+    [name, req.user.id],
+    (err) => {
+      if (err) return res.status(500).json({ message: "Something went wrong" })
+      res.json({ message: "Profile updated successfully" })
+    }
+  )
 })
 
 module.exports = router

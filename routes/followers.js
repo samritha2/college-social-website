@@ -4,97 +4,45 @@ const verifyToken = require("../middleware/authMiddleware")
 
 const router = express.Router()
 
-// FOLLOW CLUB
-router.post("/follow", verifyToken, (req, res) => {
-
+router.post("/toggle", verifyToken, (req, res) => {
   const { club_id } = req.body
   const user_id = req.user.id
-
-  db.query(
-    "INSERT INTO followers (club_id, user_id) VALUES (?, ?)",
-    [club_id, user_id],
-    (err) => {
-
-      if (err) {
-        if (err.code === "ER_DUP_ENTRY") {
-          return res.status(400).json({ message: "Already following" })
-        }
-        return res.status(500).json(err)
-      }
-
-      res.json({ message: "Club followed successfully 🔔" })
-    }
-  )
-})
-
-
-// UNFOLLOW CLUB
-router.post("/unfollow", verifyToken, (req, res) => {
-
-  const { club_id } = req.body
-  const user_id = req.user.id
-
-  db.query(
-    "DELETE FROM followers WHERE club_id = ? AND user_id = ?",
-    [club_id, user_id],
-    (err) => {
-      if (err) return res.status(500).json(err)
-
-      res.json({ message: "Unfollowed club ❌" })
-    }
-  )
-})
-
-
-// CHECK IF USER FOLLOWS A CLUB
-router.get("/check/:clubId", verifyToken, (req, res) => {
-
-  const user_id = req.user.id
-  const { clubId } = req.params
 
   db.query(
     "SELECT * FROM followers WHERE club_id = ? AND user_id = ?",
-    [clubId, user_id],
+    [club_id, user_id],
     (err, result) => {
+      if (result.length > 0) {
+        db.query(
+          "DELETE FROM followers WHERE club_id = ? AND user_id = ?",
+          [club_id, user_id],
+          (err) => {
+            if (err) return res.status(500).json({ message: "Error" })
 
-      if (err) return res.status(500).json(err)
+            return res.json({ message: "Unfollowed club" })
+          }
+        )
+      } else {
+        db.query(
+          "INSERT INTO followers (club_id, user_id) VALUES (?, ?)",
+          [club_id, user_id],
+          (err) => {
+            if (err) return res.status(500).json({ message: "Error" })
 
-      res.json({ isFollowing: result.length > 0 })
+            return res.json({ message: "Followed club" })
+          }
+        )
+      }
     }
   )
 })
 
-
-// GET ALL FOLLOWED CLUBS BY USER
-router.get("/my", verifyToken, (req, res) => {
-
-  const user_id = req.user.id
-
-  db.query(
-    "SELECT club_id FROM followers WHERE user_id = ?",
-    [user_id],
-    (err, result) => {
-
-      if (err) return res.status(500).json(err)
-
-      res.json(result)
-    }
-  )
-})
-
-
-// GET FOLLOWER COUNT
 router.get("/:clubId", (req, res) => {
-
-  const { clubId } = req.params
-
   db.query(
-    "SELECT COUNT(*) AS followerCount FROM followers WHERE club_id = ?",
-    [clubId],
+    "SELECT COUNT(*) AS total_followers FROM followers WHERE club_id = ?",
+    [req.params.clubId],
     (err, result) => {
-
-      if (err) return res.status(500).json(err)
-
+      if (err) return res.status(500).json({ message: "Error" })
       res.json(result[0])
     }
   )

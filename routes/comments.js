@@ -4,42 +4,40 @@ const verifyToken = require("../middleware/authMiddleware")
 
 const router = express.Router()
 
-// ADD COMMENT (Protected)
+// ADD COMMENT
 router.post("/add", verifyToken, (req, res) => {
   const { post_id, comment } = req.body
-  const user_id = req.user.id
+
+  if (!comment || comment.length < 1) {
+    return res.status(400).json({ message: "Empty comment" })
+  }
 
   db.query(
-    "INSERT INTO comments (post_id, user_id, comment) VALUES (?, ?, ?)",
-    [post_id, user_id, comment],
-    (err, result) => {
-      if (err) return res.status(500).json(err)
-
-      res.json({
-        message: "Comment added successfully 💬",
-        commentId: result.insertId
-      })
-    }
+    "INSERT INTO comments (post_id, user_id, comment, created_at) VALUES (?, ?, ?, NOW())",
+    [post_id, req.user.id, comment],
+    () => res.json({ message: "Comment added 💬" })
   )
 })
 
-// GET COMMENTS FOR A POST
-router.get("/:postId", (req, res) => {
-  const { postId } = req.params
+// GET COMMENTS
+router.get("/:post_id", (req, res) => {
+  db.query(
+    `SELECT comments.*, users.name
+     FROM comments
+     JOIN users ON users.id = comments.user_id
+     WHERE post_id=?`,
+    [req.params.post_id],
+    (err, result) => res.json(result)
+  )
+})
 
-  const query = `
-    SELECT comments.*, users.name 
-    FROM comments
-    JOIN users ON comments.user_id = users.id
-    WHERE comments.post_id = ?
-    ORDER BY comments.created_at DESC
-  `
-
-  db.query(query, [postId], (err, result) => {
-    if (err) return res.status(500).json(err)
-
-    res.json(result)
-  })
+// DELETE COMMENT
+router.delete("/delete/:id", verifyToken, (req, res) => {
+  db.query(
+    "DELETE FROM comments WHERE id=? AND user_id=?",
+    [req.params.id, req.user.id],
+    () => res.json({ message: "Deleted comment" })
+  )
 })
 
 module.exports = router

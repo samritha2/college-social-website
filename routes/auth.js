@@ -1,7 +1,7 @@
 const express = require("express")
+const db = require("../config/db")
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
-const db = require("../config/db")
 
 const router = express.Router()
 
@@ -9,47 +9,54 @@ const router = express.Router()
 router.post("/register", async (req, res) => {
   const { name, email, password, role } = req.body
 
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10)
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "All fields required" })
+  }
+
+  const hashed = await bcrypt.hash(password, 10)
+
+  db.query("SELECT * FROM users WHERE email=?", [email], (err, existing) => {
+    if (existing.length > 0) {
+      return res.status(400).json({ message: "Email exists ❌" })
+    }
 
     db.query(
-      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
-      [name, email, hashedPassword, role],
-      (err, result) => {
-        if (err) return res.status(500).json(err)
-        res.json({ message: "User Registered Successfully ✅" })
-      }
+      "INSERT INTO users (name, email, password, role, created_at) VALUES (?, ?, ?, ?, NOW())",
+      [name, email, hashed, role || "user"],
+      () => res.json({ message: "Registered ✅" })
     )
-  } catch (error) {
-    res.status(500).json({ error: "Registration failed" })
-  }
+  })
 })
 
 // LOGIN
 router.post("/login", (req, res) => {
   const { email, password } = req.body
 
-  db.query("SELECT * FROM users WHERE email = ?", [email], async (err, result) => {
-    if (err) return res.status(500).json(err)
+  db.query("SELECT * FROM users WHERE email=?", [email], async (err, user) => {
 
-    if (result.length === 0) {
-      return res.status(404).json({ message: "User not found" })
+    if (!user.length) {
+      return res.status(400).json({ message: "User not found" })
     }
 
-    const validPassword = await bcrypt.compare(password, result[0].password)
+    const match = await bcrypt.compare(password, user[0].password)
 
-    if (!validPassword) {
-      return res.status(401).json({ message: "Wrong password" })
+    if (!match) {
+      return res.status(400).json({ message: "Wrong password" })
     }
 
     const token = jwt.sign(
-      { id: result[0].id, role: result[0].role },
-      process.env.JWT_SECRET,
+      { id: user[0].id, role: user[0].role },
+      "secret",
       { expiresIn: "1d" }
     )
 
-    res.json({ message: "Login successful ✅", token })
+    res.json({ token, user: user[0] })
   })
+})
+
+// GET CURRENT USER
+router.get("/me", (req, res) => {
+  res.json({ message: "Protected route (use middleware)" })
 })
 
 module.exports = router
